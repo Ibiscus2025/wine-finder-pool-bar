@@ -97,31 +97,46 @@ export default function App() {
 
   /* -------- Αυτόματο φόρτωμα Excel από /public -------- */
   async function loadPreloaded() {
-    try {
-      const url = const url = '/Wines_2025.xlsx';
-
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error("Excel not found at " + url);
-
-      const buf = await res.arrayBuffer();
+  // 1) Προσπάθησε να διαβάσεις XLSX
+  try {
+    const urlX = "/Wines_2025.xlsx";
+    const resX = await fetch(urlX, { cache: "no-store" });
+    if (resX.ok) {
+      const buf = await resX.arrayBuffer();
       const wb  = XLSX.read(new Uint8Array(buf), { type: "array" });
-      const sheetName = wb.SheetNames.includes("Alternatives")
-        ? "Alternatives"
-        : wb.SheetNames[0];
+      const sheetName = wb.SheetNames.includes("Alternatives") ? "Alternatives" : wb.SheetNames[0];
       const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
-
       if (json.length) {
         setRows(json);
-        setStatus(`✅ Φορτώθηκαν ${json.length} κρασιά από το προεγκατεστημένο Excel.`);
-      } else {
-        setStatus("⚠️ Το Excel δεν έχει γραμμές.");
+        setStatus(`✅ Φορτώθηκαν ${json.length} κρασιά από XLSX (${urlX}).`);
+        return;
       }
-    } catch (e) {
-      console.error(e);
-      setStatus("❌ Δεν βρέθηκε το προεγκατεστημένο Excel στο /public.");
     }
+    throw new Error("XLSX not found or empty");
+  } catch (e) {
+    console.warn("XLSX fallback:", e);
   }
-  useEffect(() => { loadPreloaded(); }, []);
+
+  // 2) Fallback: CSV
+  try {
+    const urlC = "/Wines_2025.csv";
+    const resC = await fetch(urlC, { cache: "no-store" });
+    if (!resC.ok) throw new Error("CSV not found at " + urlC);
+    const csvText = await resC.text();
+    const wb = XLSX.read(csvText, { type: "string" }); // ΝΑΙ, το XLSX διαβάζει και CSV αν είναι type:string
+    const sheetName = wb.SheetNames[0];
+    const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
+    if (json.length) {
+      setRows(json);
+      setStatus(`✅ Φορτώθηκαν ${json.length} κρασιά από CSV (${urlC}).`);
+    } else {
+      setStatus("⚠️ Το CSV δεν είχε γραμμές.");
+    }
+  } catch (e) {
+    console.error(e);
+    setStatus("❌ Δεν βρέθηκε προεγκατεστημένο Excel/CSV στο /public.");
+  }
+}
 
   /* -------- Manual upload (μένει για σένα, κρυφό στο UI) -------- */
   async function handleFile(file) {
