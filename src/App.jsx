@@ -98,7 +98,8 @@ export default function App() {
   /* -------- Αυτόματο φόρτωμα Excel από /public -------- */
   async function loadPreloaded() {
     try {
-      const url = "/Wine_List_from_PDF.xlsx"; // αν έχεις άλλο όνομα, άλλαξέ το
+      const url = '/Wine_List_with_Alternatives.xlsx';
+
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error("Excel not found at " + url);
 
