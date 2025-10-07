@@ -1,6 +1,28 @@
 import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import "./styles.css";
+// --- Fuzzy Matching Helpers ---
+function stripDiacritics(s){ return (s||"").normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function normalizeName(s){
+  return stripDiacritics(String(s||"")
+    .toLowerCase()
+    .replace(/[\|\-–—_,.()\/]+/g,' ')
+    .replace(/\s+/g,' ')
+    .trim());
+}
+function tokensOf(s){
+  return normalizeName(s).split(' ').filter(t => t.length >= 2);
+}
+function similarity(a,b){
+  const A = new Set(tokensOf(a)), B = new Set(tokensOf(b));
+  if (A.size===0 || B.size===0) return 0;
+  let inter = 0; A.forEach(t => { if (B.has(t)) inter++; });
+  const jaccard = inter / (A.size + B.size - inter);
+  const na = normalizeName(a), nb = normalizeName(b);
+  const prefixBonus = nb.startsWith(na) || na.startsWith(nb) ? 0.25 : 0;
+  const subBonus = na.includes(nb) || nb.includes(na) ? 0.15 : 0;
+  return Math.min(1, jaccard + prefixBonus + subBonus);
+}
 
 export default function App() {
   // -------- STATE
@@ -240,11 +262,8 @@ function Result({ rows, selected, derive, norm }) {
   const ch = derive(selected);
 
   const altNames = ch.alts;
-  const altRows = altNames.map((name) =>
-    rows.find(
-      (r) => norm(r["Όνομα"]).toLowerCase() === norm(name).toLowerCase()
-    )
-  );
+const altRows = altNames.map((name) => findRowByNameLoose(name));
+
 
   return (
     <div className="card" style={{ marginTop: 16 }}>
