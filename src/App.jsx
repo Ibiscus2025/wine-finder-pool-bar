@@ -1,12 +1,353 @@
-import React, { useMemo, useRef, useState } from 'react'
-import * as XLSX from 'xlsx'
-const EXPECTED_COLS=['Κατηγορία','Όνομα','Τιμή','Αντιπρόταση 1','Αντιπρόταση 2','Αντιπρόταση 3','Ποικιλία','Περιοχή','Αλκοόλ','Ξηρότητα','Ορυκτότητα','Οξύτητα','Σώμα','Σχόλια']
-function score(a,b){const x=(a||'').toLowerCase();const y=(b||'').toLowerCase();if(!y)return 0;if(x===y)return 1;if(x.includes(y))return Math.min(0.95,y.length/(x.length+1));const ta=new Set(x.split(/[^a-zA-Zα-ωΑ-Ω0-9%]+/).filter(Boolean));const tb=new Set(y.split(/[^a-zA-Zα-ωΑ-Ω0-9%]+/).filter(Boolean));const inter=[...ta].filter(t=>tb.has(t)).length;const uni=new Set([...ta,...tb]).size||1;return inter/uni}
-export default function App(){const [rows,setRows]=useState([]);const [status,setStatus]=useState('Φόρτωσε το Excel με τις αντιπροτάσεις.');const [query,setQuery]=useState('');const [selected,setSelected]=useState(null);const [category,setCategory]=useState('Όλες');const [tab,setTab]=useState('finder');const fileRef=useRef(null)
-const categories=useMemo(()=>['Όλες',...Array.from(new Set(rows.map(r=>r['Κατηγορία']).filter(Boolean))).sort()], [rows]);const names=useMemo(()=>Array.from(new Set(rows.map(r=>r['Όνομα']).filter(Boolean))), [rows])
-function handleFile(file){setStatus('Γίνεται ανάγνωση αρχείου…');const reader=new FileReader();reader.onload=e=>{try{const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});const sheet=wb.Sheets[wb.SheetNames[0]];const json=XLSX.utils.sheet_to_json(sheet,{defval:''});if(!json.length){setStatus('⚠️ Άδειο αρχείο ή λάθος sheet.');return}setRows(json);setStatus(`✅ Φορτώθηκαν ${json.length} κρασιά.`)}catch(err){console.error(err);setStatus('❌ Αποτυχία ανάγνωσης.')}};reader.readAsArrayBuffer(file)}
-function onSearch(){if(!rows.length||!query.trim())return;const pool=category==='Όλες'?rows:rows.filter(r=>(r['Κατηγορία']||'')===category);let best=null,bs=-1;for(const r of pool){const s=score(r['Όνομα']||'',query);if(s>bs){bs=s;best=r}}setSelected(best)}
-const get=(o,k,f='—')=>(o&&o[k]?o[k]:f)
-function derive(item){const direct={variety:get(item,'Ποικιλία'),region:get(item,'Περιοχή'),abv:get(item,'Αλκοόλ'),dryness:get(item,'Ξηρότητα'),minerality:get(item,'Ορυκτότητα'),acidity:get(item,'Οξύτητα'),body:get(item,'Σώμα'),notes:get(item,'Σχόλια')};const name=(item?.['Όνομα']||'').toUpperCase();const has=k=>name.includes(k);const isAss=has('ASSYRT')||has('ΑΣΥΡΤ')||has('SANTORINI')||has('ΣΑΝΤΟ');const isVid=has('VIDIAN')||has('ΒΙΔΙΑΝ');const isMos=has('MOSCHO')||has('ΜΟΣΧΟ');const isSau=has('SAUVIGNON');const est={};if(direct.dryness==='—'){est.dryness=isAss?9:isSau?7:isVid?5.5:isMos?5:'—'}if(direct.minerality==='—'){est.minerality=isAss?9:isVid?6:isSau?6.5:isMos?5.5:'—'}if(direct.acidity==='—'){est.acidity=isAss?8.5:isSau?7.5:isVid?6.5:isMos?6:'—'}if(direct.body==='—'){est.body=isAss?6.5:isSau?6:isVid?6.5:isMos?5.5:'—'}return {variety:direct.variety!=='—'?direct.variety:(isAss?'Ασύρτικο':isVid?'Βιδιανό':isMos?'Μοσχοφίλερο':isSau?'Sauvignon Blanc':'—'),region:direct.region,abv:direct.abv,dryness:direct.dryness!=='—'?direct.dryness:est.dryness,minerality:direct.minerality!=='—'?direct.minerality:est.minerality,acidity:direct.acidity!=='—'?direct.acidity:est.acidity,body:direct.body!=='—'?direct.body:est.body,notes:direct.notes}}
-function Result(){if(!selected)return null;const ch=derive(selected);const alts=[selected['Αντιπρόταση 1'],selected['Αντιπρόταση 2'],selected['Αντιπρόταση 3']].filter(Boolean);const main=alts[0]||'';const rest=alts.slice(1);return (<div className="card" style={{marginTop:16}}><div className="title-line"><h3 style={{margin:'8px 0 0 0'}}>{selected['Όνομα']}</h3><div className="muted">{selected['Τιμή']}</div></div><div className="row" style={{marginTop:12}}><div className="card"><div className="muted" style={{fontWeight:600,color:'#9f1239'}}>Χαρακτηριστικά</div><div className="kv"><span className="muted">Ποικιλία</span><b>{ch.variety}</b></div><div className="kv"><span className="muted">Περιοχή</span><b>{ch.region}</b></div><div className="kv"><span className="muted">Αλκοόλ</span><b>{ch.abv}</b></div><div className="kv"><span className="muted">Ξηρότητα</span><b>{ch.dryness}</b></div><div className="kv"><span className="muted">Ορυκτότητα</span><b>{ch.minerality}</b></div><div className="kv"><span className="muted">Οξύτητα</span><b>{ch.acidity}</b></div><div className="kv"><span className="muted">Σώμα</span><b>{ch.body}</b></div><div className="muted" style={{marginTop:8}}><b>Σχόλια:</b> {ch.notes||'—'}</div></div><div className="card" style={{background:'#fff7f8'}}><div className="muted" style={{fontWeight:600,color:'#9f1239'}}>Κύρια Αντιπρόταση</div>{main ? <div style={{fontWeight:600}}>{main}</div> : <div className="muted">Δεν βρέθηκε αντιπρόταση.</div>}{rest.length>0 && <div style={{marginTop:8}}>{rest.map((a,i)=>(<span key={i} className="badge">{a}</span>))}</div>}</div><div className="card"><div className="muted" style={{fontWeight:600}}>Quick Tips</div><ul className="list"><li>Φόρτωσε το Excel (sheet: Alternatives).</li><li>Φίλτραρε κατηγορία.</li><li>Γράψε 2–3 λέξεις από το όνομα.</li></ul></div></div></div>)}
-return (<div><header className="header"><div className="container"><h1 className="title">Wine Finder Pool Bar</h1><div className="subtitle">Αναζήτηση κρασιών, χαρακτηριστικά & αντιπροτάσεις — wine-themed.</div><div className="tabs"><button className={tab==='finder'?'btn primary':'btn ghost'} onClick={()=>setTab('finder')}>Φόρμα Αναζήτησης</button><button className={tab==='about'?'btn primary':'btn ghost'} onClick={()=>setTab('about')}>About / Οδηγίες</button></div></div></header><main className="container" style={{paddingTop:16}}>{tab==='about'?(<div className="card"><h2>About • Οδηγίες</h2><ol className="list"><li>Ανέβασε το <code>Wine_List_with_Alternatives.xlsx</code> (sheet: <b>Alternatives</b>).</li><li>Επίλεξε Κατηγορία (προαιρετικό).</li><li>Γράψε όνομα κρασιού και πάτα Αναζήτηση.</li></ol></div>):(<div className="card"><div className="row"><div className="col"><label>Αρχείο Excel</label><input className="input" type="file" accept=".xlsx,.xls,.csv" ref={fileRef} onChange={e=>e.target.files?.[0]&&handleFile(e.target.files[0])}/></div><div className="col"><label>Κατηγορία</label><select value={category} onChange={e=>setCategory(e.target.value)}>{categories.map(c=>(<option key={c} value={c}>{c}</option>))}</select></div><div className="col"><label>Όνομα Κρασιού</label><div style={{display:'flex',gap:8}}><input className="input" list="wines" placeholder="π.χ. Vassaltis Santorini…" value={query} onChange={e=>setQuery(e.target.value)}/><datalist id="wines">{names.map((n,i)=>(<option key={i} value={n}/>))}</datalist><button className="btn primary" onClick={onSearch}>Αναζήτηση</button></div></div></div><div className="hr"></div><div className="muted">{status}</div><Result/></div>)}<div className="footer">Footer • Wine Finder Pool Bar</div></main></div>)}
+import React, { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
+import "./styles.css";
+
+export default function App() {
+  // -------- STATE
+  const [rows, setRows] = useState([]);
+  const [status, setStatus] = useState("Φόρτωσε το Excel με τις αντιπροτάσεις.");
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("Όλες");
+  const [selected, setSelected] = useState(null);
+  const [tab, setTab] = useState("finder");
+
+  // Κάνε το true μόνο αν θέλεις να φαίνεται το upload στο UI
+  const SHOW_UPLOAD = false;
+
+  // -------- HELPERS
+  const norm = (s) => (s || "").toString().trim();
+  const derive = (r) => ({
+    name: norm(r["Όνομα"]),
+    price: norm(r["Τιμή"]),
+    variety: norm(r["Ποικιλία"]),
+    region: norm(r["Περιοχή"]),
+    abv: norm(r["Αλκοόλ"]),
+    dryness: norm(r["Ξηρότητα"]),
+    minerality: norm(r["Ορυκτότητα"]),
+    acidity: norm(r["Οξύτητα"]),
+    body: norm(r["Σώμα"]),
+    notes: norm(r["Σχόλια"]),
+    alts: [
+      norm(r["Αντιπρόταση 1"]),
+      norm(r["Αντιπρόταση 2"]),
+      norm(r["Αντιπρόταση 3"]),
+    ].filter(Boolean),
+  });
+
+  const categories = useMemo(() => {
+    const set = new Set(rows.map((r) => norm(r["Κατηγορία"]) || "Άγνωστη"));
+    return ["Όλες", ...Array.from(set)];
+  }, [rows]);
+
+  const names = useMemo(() => {
+    const set = new Set(rows.map((r) => norm(r["Όνομα"])).filter(Boolean));
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "el"));
+  }, [rows]);
+
+  // -------- AUTO-LOAD PRELOADED EXCEL (από public/)
+  async function loadPreloaded() {
+    try {
+      // Ανέβασες στο public/ αυτό που φτιάξαμε: Wine_List_from_PDF.xlsx
+      const url = "/Wine_List_from_PDF.xlsx";
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error("Excel not found at " + url);
+
+      const buf = await res.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
+
+      // sheet "Alternatives" (όπως το έβγαλα), αλλιώς πάρε το πρώτο
+      const sheetName = wb.SheetNames.includes("Alternatives")
+        ? "Alternatives"
+        : wb.SheetNames[0];
+
+      const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
+        defval: "",
+      });
+
+      if (json.length) {
+        setRows(json);
+        setStatus(`✅ Φορτώθηκαν ${json.length} κρασιά από το προεγκατεστημένο Excel.`);
+      } else {
+        setStatus("⚠️ Το Excel δεν έχει γραμμές.");
+      }
+    } catch (e) {
+      console.error(e);
+      setStatus("❌ Δεν βρέθηκε το προεγκατεστημένο Excel στο /public.");
+    }
+  }
+
+  useEffect(() => {
+    loadPreloaded();
+  }, []);
+
+  // -------- MANUAL FILE (παραμένει διαθέσιμο, αλλά κρυφό όταν SHOW_UPLOAD=false)
+  async function handleFile(file) {
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
+      const sheetName = wb.SheetNames.includes("Alternatives")
+        ? "Alternatives"
+        : wb.SheetNames[0];
+      const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
+        defval: "",
+      });
+      setRows(json);
+      setStatus(`✅ Φορτώθηκαν ${json.length} γραμμές από το ${file.name}.`);
+    } catch (e) {
+      console.error(e);
+      setStatus("❌ Αποτυχία ανάγνωσης αρχείου.");
+    }
+  }
+
+  // -------- SEARCH
+  function onSearch() {
+    const q = norm(query).toLowerCase();
+    const cat = norm(category);
+    const filtered = rows.filter((r) => {
+      const okCat = cat === "Όλες" || norm(r["Κατηγορία"]) === cat;
+      const okName =
+        !q || norm(r["Όνομα"]).toLowerCase().includes(q);
+      return okCat && okName;
+    });
+    if (filtered.length > 0) setSelected(filtered[0]);
+    else setSelected(null);
+  }
+
+  // -------- UI
+  return (
+    <div className="container">
+      <header className="header">
+        <h1 className="title">Wine Finder Pool Bar</h1>
+        <p className="subtitle">
+          Αναζήτηση κρασιών, χαρακτηριστικά & αντιπροτάσεις — wine-themed.
+        </p>
+
+        <div className="tabs">
+          <button
+            className={`btn ${tab === "finder" ? "primary" : ""}`}
+            onClick={() => setTab("finder")}
+          >
+            Φόρμα Αναζήτησης
+          </button>
+          <button
+            className={`btn ${tab === "about" ? "primary" : ""}`}
+            onClick={() => setTab("about")}
+          >
+            About / Οδηγίες
+          </button>
+        </div>
+      </header>
+
+      {tab === "finder" && (
+        <>
+          <div className="card">
+            <div className="row">
+              {SHOW_UPLOAD && (
+                <div className="col">
+                  <label>Αρχείο Excel</label>
+                  <input
+                    className="input"
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={(e) =>
+                      e.target.files?.[0] && handleFile(e.target.files[0])
+                    }
+                  />
+                </div>
+              )}
+
+              <div className="col">
+                <label>Κατηγορία</label>
+                <select
+                  className="input"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  {categories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="col">
+                <label>Όνομα Κρασιού</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    className="input"
+                    list="wines"
+                    placeholder="π.χ. Vassaltis Santorini…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                  <datalist id="wines">
+                    {names.map((n) => (
+                      <option key={n} value={n} />
+                    ))}
+                  </datalist>
+                  <button className="btn primary" onClick={onSearch}>
+                    Αναζήτηση
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="muted" style={{ marginTop: 8 }}>{status}</div>
+          </div>
+
+          <Result
+            rows={rows}
+            selected={selected}
+            derive={derive}
+            norm={norm}
+          />
+        </>
+      )}
+
+      {tab === "about" && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>About / Οδηγίες</h3>
+          <ul className="list">
+            <li>
+              Το αρχείο Excel φορτώνεται αυτόματα από το <code>/public</code>{" "}
+              (π.χ. <code>/Wine_List_from_PDF.xlsx</code>), sheet{" "}
+              <b>Alternatives</b>.
+            </li>
+            <li>
+              Βασικές στήλες: <b>Κατηγορία</b>, <b>Όνομα</b>, <b>Τιμή</b>,{" "}
+              <b>Αντιπρόταση 1–3</b>, <b>Ποικιλία</b>, <b>Περιοχή</b>,{" "}
+              <b>Αλκοόλ</b>, <b>Ξηρότητα</b>, <b>Ορυκτότητα</b>, <b>Οξύτητα</b>,{" "}
+              <b>Σώμα</b>, <b>Σχόλια</b>.
+            </li>
+            <li>
+              Για να εμφανίζονται χαρακτηριστικά στις αντιπροτάσεις, βάλ’ τες
+              ως ξεχωριστές γραμμές με ίδιο <b>Όνομα</b>.
+            </li>
+          </ul>
+        </div>
+      )}
+
+      <footer className="footer">• Wine Finder Pool Bar</footer>
+    </div>
+  );
+}
+
+// -------- Result component
+function Result({ rows, selected, derive, norm }) {
+  if (!selected) return null;
+
+  const ch = derive(selected);
+
+  const altNames = ch.alts;
+  const altRows = altNames.map((name) =>
+    rows.find(
+      (r) => norm(r["Όνομα"]).toLowerCase() === norm(name).toLowerCase()
+    )
+  );
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="title-line">
+        <h3 style={{ margin: "8px 0 0 0" }}>{ch.name}</h3>
+        <div className="muted">{ch.price}</div>
+      </div>
+
+      <div className="row" style={{ marginTop: 12 }}>
+        <div className="card">
+          <div className="muted" style={{ fontWeight: 600, color: "#9f1239" }}>
+            Χαρακτηριστικά
+          </div>
+          <KV k="Ποικιλία" v={ch.variety} />
+          <KV k="Περιοχή" v={ch.region} />
+          <KV k="Αλκοόλ" v={ch.abv} />
+          <KV k="Ξηρότητα" v={ch.dryness} />
+          <KV k="Ορυκτότητα" v={ch.minerality} />
+          <KV k="Οξύτητα" v={ch.acidity} />
+          <KV k="Σώμα" v={ch.body} />
+          {ch.notes && (
+            <div className="muted" style={{ marginTop: 8 }}>
+              <b>Σχόλια:</b> {ch.notes}
+            </div>
+          )}
+        </div>
+
+        <div className="card" style={{ background: "#fff7f8" }}>
+          <div className="muted" style={{ fontWeight: 600, color: "#9f1239" }}>
+            Κύρια Αντιπρόταση
+          </div>
+          {altNames[0] ? (
+            <>
+              <div style={{ fontWeight: 600 }}>{altNames[0]}</div>
+              {altRows[0] && (
+                <div className="muted" style={{ marginTop: 4 }}>
+                  {norm(altRows[0]["Τιμή"])}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="muted">—</div>
+          )}
+          {altNames.slice(1).length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              {altNames.slice(1).map((a, i) => (
+                <span key={i} className="badge">
+                  {a}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {altNames.length > 0 && (
+        <>
+          <div className="hr"></div>
+          <div className="muted" style={{ fontWeight: 600, marginBottom: 8 }}>
+            Αναλυτικά Αντιπροτάσεις
+          </div>
+          <div className="row">
+            {altNames.map((name, idx) => {
+              const r = altRows[idx];
+              if (!r) {
+                return (
+                  <div key={idx} className="card">
+                    <div style={{ fontWeight: 600 }}>{name}</div>
+                    <div className="muted" style={{ marginTop: 6 }}>
+                      Δεν βρέθηκαν λεπτομέρειες στο Excel.
+                    </div>
+                  </div>
+                );
+              }
+              const d = derive(r);
+              return (
+                <div key={idx} className="card">
+                  <div className="title-line">
+                    <div style={{ fontWeight: 600 }}>{name}</div>
+                    <div className="muted">{d.price}</div>
+                  </div>
+                  <KV k="Ποικιλία" v={d.variety} />
+                  <KV k="Περιοχή" v={d.region} />
+                  <KV k="Ξηρότητα" v={d.dryness} />
+                  <KV k="Ορυκτότητα" v={d.minerality} />
+                  <KV k="Οξύτητα" v={d.acidity} />
+                  <KV k="Σώμα" v={d.body} />
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function KV({ k, v }) {
+  if (!v) return null;
+  return (
+    <div className="kv">
+      <span className="muted">{k}</span>
+      <b>{v}</b>
+    </div>
+  );
+}
