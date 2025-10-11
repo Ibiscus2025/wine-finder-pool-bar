@@ -95,49 +95,27 @@ export default function App() {
     return best.score >= threshold ? best.hit : null;
   }
 
-  /* -------- Αυτόματο φόρτωμα Excel από /public -------- */
-  async function loadPreloaded() {
-  // 1) Προσπάθησε να διαβάσεις XLSX
+  // -------- Αυτόματο φόρτωμα CSV από GitHub --------
+async function loadPreloaded() {
   try {
-    const urlX = "/Wines_2025.csv";
-    const resX = await fetch(urlX, { cache: "no-store" });
-    if (resX.ok) {
-      const buf = await resX.arrayBuffer();
-      const wb  = XLSX.read(new Uint8Array(buf), { type: "array" });
-      const sheetName = wb.SheetNames.includes("Alternatives") ? "Alternatives" : wb.SheetNames[0];
-      const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
-      if (json.length) {
-        setRows(json);
-        setStatus(`✅ Φορτώθηκαν ${json.length} κρασιά από XLSX (${urlX}).`);
-        return;
-      }
-    }
-    throw new Error("XLSX not found or empty");
-  } catch (e) {
-    console.warn("XLSX fallback:", e);
-  }
-
-  // 2) Fallback: CSV
-  try {
-    const urlC = "/Wines_2025.csv";
-    const resC = await fetch(urlC, { cache: "no-store" });
-    if (!resC.ok) throw new Error("CSV not found at " + urlC);
-    const csvText = await resC.text();
-    const wb = XLSX.read(csvText, { type: "string" }); // ΝΑΙ, το XLSX διαβάζει και CSV αν είναι type:string
+    const url = "https://raw.githubusercontent.com/Ibiscus2025/wine-finder-pool-bar/main/public/Wines_2025.csv";
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error("Δεν βρέθηκε το Wines_2025.csv στο GitHub");
+    const csvText = await res.text();
+    const wb = XLSX.read(csvText, { type: "string" }); // διαβάζει CSV
     const sheetName = wb.SheetNames[0];
     const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
     if (json.length) {
       setRows(json);
-      setStatus(`✅ Φορτώθηκαν ${json.length} κρασιά από CSV (${urlC}).`);
+      setStatus(`✅ Φορτώθηκαν ${json.length} κρασιά από CSV (GitHub).`);
     } else {
-      setStatus("⚠️ Το CSV δεν είχε γραμμές.");
+      setStatus("⚠️ Το CSV δεν περιέχει γραμμές.");
     }
   } catch (e) {
     console.error(e);
-    setStatus("❌ Δεν βρέθηκε προεγκατεστημένο Excel/CSV στο /public.");
+    setStatus("❌ Δεν βρέθηκε προκαθορισμένο αρχείο CSV στο GitHub.");
   }
 }
-
   /* -------- Manual upload (μένει για σένα, κρυφό στο UI) -------- */
   async function handleFile(file) {
     try {
