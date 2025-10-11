@@ -1,16 +1,187 @@
-:root { --rose:#7f1d1d; --rose2:#9f1239; --muted:#6b7280; }
-*{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:linear-gradient(#fff,#fff7f8);color:#111}
-.header{background:linear-gradient(90deg,var(--rose),var(--rose2));color:#fff;padding:28px 16px}
-.container{max-width:1024px;margin:0 auto;padding:16px}
-.title{font-size:28px;font-weight:700;margin:0}
-.subtitle{opacity:.9;margin-top:6px}
-.tabs{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
-.btn{border:1px solid #e5e7eb;background:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
-.btn.primary{background:var(--rose2);color:#fff;border-color:transparent}
-.btn.ghost{background:#fff;color:var(--rose2)}
-.card{background:#fff;border:1px solid #fee2e2;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.04);padding:18px}
-.row{display:grid;grid-template-columns:1fr;gap:12px}
-@media(min-width:820px){.row{grid-template-columns:1fr 1fr 1fr}}
-.input,select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb}
-.badge{display:inline-block;padding:6px 10px;border-radius:999px;border:1px solid #fecdd3;background:#fff;color:#9f1239;font-size:12px;margin-right:6px;margin-bottom:6px}
-.muted{color:#6b7280}.list{padding-left:18px}.hr{height:1px;background:#fee2e2;border:0;margin:14px 0}.footer{color:#6b7280;font-size:12px;margin-top:24px}.title-line{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}.kv{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fee2e2}.kv b{font-weight:600}
+/* ---------- Βασικά ---------- */
+body {
+  font-family: "Inter", "Segoe UI", sans-serif;
+  margin: 0;
+  background: linear-gradient(to bottom right, #fff7f7, #ffeef0);
+  color: #333;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 850px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+h1, h2, h3, h4, h5 {
+  margin: 0;
+}
+
+.title {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #7b002c;
+}
+
+.subtitle {
+  font-size: 0.95rem;
+  opacity: 0.8;
+  margin-top: 0.25rem;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+/* ---------- Κάρτες & Panels ---------- */
+.card {
+  background: #fff;
+  border-radius: 1rem;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  transition: 0.2s;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.price {
+  font-weight: 600;
+  color: #7b002c;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+}
+@media (min-width: 700px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.panel {
+  background: #fafafa;
+  border-radius: 0.8rem;
+  padding: 1rem;
+}
+
+.panel-title {
+  font-weight: 600;
+  color: #7b002c;
+  margin-bottom: 0.5rem;
+}
+
+.details {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.details li {
+  padding: 0.2rem 0;
+  font-size: 0.9rem;
+}
+.details .key {
+  font-weight: 600;
+}
+
+/* ---------- Αντιπροτάσεις ---------- */
+.alt-chip {
+  display: inline-block;
+  background: #7b002c;
+  color: #fff;
+  border-radius: 1.2rem;
+  padding: 0.3rem 0.8rem;
+  margin: 0.2rem;
+  font-size: 0.85rem;
+}
+
+/* ---------- Φόρμα ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1rem;
+}
+
+.field label {
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+
+input[type="text"],
+select,
+input[type="file"] {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #ccc;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: #777;
+  margin-top: 0.3rem;
+}
+
+.form-grid {
+  display: grid;
+  gap: 0.8rem;
+}
+
+@media (min-width: 600px) {
+  .form-grid {
+    grid-template-columns: 1fr 1fr auto;
+    align-items: end;
+  }
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* ---------- Buttons ---------- */
+button.btn {
+  border: none;
+  cursor: pointer;
+  border-radius: 0.5rem;
+  padding: 0.7rem 1rem;
+  font-weight: 600;
+  transition: 0.2s;
+}
+
+button.primary {
+  background-color: #7b002c;
+  color: #fff;
+}
+
+button.primary:hover {
+  background-color: #a0003c;
+}
+
+/* ---------- Status & Footer ---------- */
+.status {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.footer {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #777;
+  margin-top: 2rem;
+}
