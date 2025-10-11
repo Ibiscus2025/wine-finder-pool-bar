@@ -1,307 +1,326 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import "./styles.css";
 
-/* ---------- Fuzzy Matching Helpers ---------- */
-function stripDiacritics(s){ return (s||"").normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
-function normalizeName(s){
-  return stripDiacritics(String(s||"")
-    .toLowerCase()
-    .replace(/[\|\-–—_,.()\/]+/g,' ')
-    .replace(/\s+/g,' ')
-    .trim());
+/* ----------------- helpers (Greek-friendly) ----------------- */
+function stripDiacritics(s = "") {
+  return (s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’'’]/g, "'")
+    .trim();
 }
-function tokensOf(s){
-  return normalizeName(s).split(' ').filter(t => t.length >= 2);
+function norm(s = "") {
+  return stripDiacritics(String(s)).toLowerCase();
 }
-function similarity(a,b){
-  const A = new Set(tokensOf(a)), B = new Set(tokensOf(b));
-  if (A.size===0 || B.size===0) return 0;
-  let inter = 0; A.forEach(t => { if (B.has(t)) inter++; });
-  const jaccard = inter / (A.size + B.size - inter);
-  const na = normalizeName(a), nb = normalizeName(b);
-  const prefixBonus = nb.startsWith(na) || na.startsWith(nb) ? 0.25 : 0;
-  const subBonus   = na.includes(nb) || nb.includes(na) ? 0.15 : 0;
-  return Math.min(1, jaccard + prefixBonus + subBonus);
+function tokensOf(s = "") {
+  return norm(s)
+    .split(/[\s,;./()\-]+/g)
+    .filter(Boolean);
 }
-/* -------------------------------------------- */
+function similarity(a = "", b = "") {
+  const A = new Set(tokensOf(a));
+  const B = new Set(tokensOf(b));
+  if (!A.size || !B.size) return 0;
+  let inter = 0;
+  for (const t of A) if (B.has(t)) inter++;
+  const jac = inter / (A.size + B.size - inter);
+  const pref =
+    a.toLowerCase().startsWith(b.toLowerCase()) ||
+    b.toLowerCase().startsWith(a.toLowerCase())
+      ? 0.25
+      : 0;
+  return jac + pref;
+}
 
+/* ----------------- κύριο component ----------------- */
 export default function App() {
-  /* -------- STATE -------- */
-  const [rows, setRows]       = useState([]);
-  const [status, setStatus]   = useState("Φόρτωσε το Excel με τις αντιπροτάσεις.");
-  const [query, setQuery]     = useState("");
+  /* STATE */
+  const [rows, setRows] = useState([]);
+  const [status, setStatus] = useState("Φόρτωσε το Excel με τις αντιπροτάσεις.");
   const [category, setCategory] = useState("Όλες");
+  const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
-  const [tab, setTab]         = useState("finder");
 
-  // κάν’ το true μόνο αν θες να φαίνεται το upload στο UI
-  const SHOW_UPLOAD = false;
+  /* ------------- εμφανίζουμε φόρμα upload ------------- */
+  const SHOW_UPLOAD = true;
 
-  /* -------- HELPERS -------- */
-  const norm = (s) => (s || "").toString().trim();
-  const derive = (r) => ({
-    name:     norm(r["Όνομα"]),
-    price:    norm(r["Τιμή"]),
-    variety:  norm(r["Ποικιλία"]),
-    region:   norm(r["Περιοχή"]),
-    abv:      norm(r["Αλκοόλ"]),
-    dryness:  norm(r["Ξηρότητα"]),
-    minerality:norm(r["Ορυκτότητα"]),
-    acidity:  norm(r["Οξύτητα"]),
-    body:     norm(r["Σώμα"]),
-    notes:    norm(r["Σχόλια"]),
-    alts: [
-      norm(r["Αντιπρόταση 1"]),
-      norm(r["Αντιπρόταση 2"]),
-      norm(r["Αντιπρόταση 3"]),
-    ].filter(Boolean),
-  });
+  /* ------------------- columns mapping ------------------- */
+  // Προσπαθούμε να “βρούμε” σωστές στήλες ακόμα κι αν γραφτούν λίγο διαφορετικά.
+  const col = (name) =>
+    [
+      ["Όνομα", "name", "wine", "κρασί"],
+      ["Κατηγορία", "category", "τύπος", "type"],
+      ["Τιμή", "price", "τιμη", "€"],
+      ["Ποικιλία", "variety"],
+      ["Περιοχή", "region", "appellation"],
+      ["Αλκοόλ", "abv", "alcohol"],
+      ["Ξηρότητα", "dryness", "ξηροτητα"],
+      ["Ορυκτότητα", "minerality", "ορυκτοτητα"],
+      ["Οξύτητα", "acidity", "οξυτητα"],
+      ["Σώμα", "body", "σωμα"],
+      ["Σχόλια", "notes", "comments", "σημειώσεις", "notes/comments"],
+      ["Αντιπρόταση 1", "alt1", "alternative 1"],
+      ["Αντιπρόταση 2", "alt2", "alternative 2"],
+      ["Αντιπρόταση 3", "alt3", "alternative 3"],
+    ].find((arr) => norm(arr[0]) === norm(name)) || [name];
 
+  // Γενική συνάρτηση για ασφαλή ανάγνωση τιμών με διάφορα ονόματα κελιών
+  const get = (r, want) => {
+    const wanted = norm(want);
+    // 1) άμεση αντιστοίχιση
+    for (const k of Object.keys(r)) {
+      if (norm(k) === wanted) return r[k];
+    }
+    // 2) “παρατσούκλια”
+    const map = {
+      [norm("Όνομα")]: ["name", "κρασί", "wine"],
+      [norm("Κατηγορία")]: ["category", "τύπος", "type"],
+      [norm("Τιμή")]: ["price", "τιμη", "€"],
+      [norm("Ποικιλία")]: ["variety"],
+      [norm("Περιοχή")]: ["region", "appellation"],
+      [norm("Αλκοόλ")]: ["abv", "alcohol"],
+      [norm("Ξηρότητα")]: ["dryness", "ξηροτητα"],
+      [norm("Ορυκτότητα")]: ["minerality", "ορυκτοτητα"],
+      [norm("Οξύτητα")]: ["acidity", "οξυτητα"],
+      [norm("Σώμα")]: ["body", "σωμα"],
+      [norm("Σχόλια")]: ["notes", "comments", "σημειωσεις", "σημειώσεις"],
+      [norm("Αντιπρόταση 1")]: ["alt1", "alternative 1", "αντιπροταση 1"],
+      [norm("Αντιπρόταση 2")]: ["alt2", "alternative 2", "αντιπροταση 2"],
+      [norm("Αντιπρόταση 3")]: ["alt3", "alternative 3", "αντιπροταση 3"],
+    }[wanted];
+    if (map) {
+      for (const alias of map) {
+        const hit = Object.keys(r).find((k) => norm(k) === norm(alias));
+        if (hit) return r[hit];
+      }
+    }
+    return r[want] ?? "";
+  };
+
+  /* ------------------- categories & index ------------------- */
   const categories = useMemo(() => {
-    const set = new Set(rows.map((r) => norm(r["Κατηγορία"]) || "Άγνωστη"));
+    const set = new Set(rows.map((r) => get(r, "Κατηγορία")).filter(Boolean));
     return ["Όλες", ...Array.from(set)];
   }, [rows]);
 
-  const names = useMemo(() => {
-    const set = new Set(rows.map((r) => norm(r["Όνομα"])).filter(Boolean));
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "el"));
-  }, [rows]);
-
-  /* -------- Ευρετήριο για fuzzy αναζήτηση ονομάτων -------- */
   const nameIndex = useMemo(() => {
     const idx = [];
-    rows.forEach(r => {
-      const name = (r["Όνομα"]||"").toString();
-      if (name) idx.push({ key: normalizeName(name), raw: name, row: r });
+    rows.forEach((r, i) => {
+      const name = get(r, "Όνομα");
+      if (name) idx.push({ key: norm(name), raw: name, row: r, i });
     });
     return idx;
   }, [rows]);
 
-  function findRowByNameLoose(name, threshold=0.45){
-    const target = (name||"").toString();
-    if (!target) return null;
-    const nTarget = normalizeName(target);
-    let best = { score: 0, hit: null };
-    for (const it of nameIndex){
-      if (it.key.startsWith(nTarget) || nTarget.startsWith(it.key)){
-        const sc = similarity(it.key, nTarget) + 0.05;
-        if (sc > best.score) best = { score: sc, hit: it.row };
-        continue;
-      }
-      const sc = similarity(it.key, nTarget);
-      if (sc > best.score) best = { score: sc, hit: it.row };
-    }
-    return best.score >= threshold ? best.hit : null;
-  }
-
-  // -------- Αυτόματο φόρτωμα CSV από GitHub --------
-async function loadPreloaded() {
-  try {
-    const url = "https://raw.githubusercontent.com/Ibiscus2025/wine-finder-pool-bar/main/public/Wines_2025.csv";
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) throw new Error("Δεν βρέθηκε το Wines_2025.csv στο GitHub");
-    const csvText = await res.text();
-    const wb = XLSX.read(csvText, { type: "string" }); // διαβάζει CSV
-    const sheetName = wb.SheetNames[0];
-    const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
-    if (json.length) {
-      setRows(json);
-      setStatus(`✅ Φορτώθηκαν ${json.length} κρασιά από CSV (GitHub).`);
-    } else {
-      setStatus("⚠️ Το CSV δεν περιέχει γραμμές.");
-    }
-  } catch (e) {
-    console.error(e);
-    setStatus("❌ Δεν βρέθηκε προκαθορισμένο αρχείο CSV στο GitHub.");
-  }
-}
-  /* -------- Manual upload (μένει για σένα, κρυφό στο UI) -------- */
+  /* --------------------- file handling --------------------- */
   async function handleFile(file) {
     try {
-      const buf = await file.arrayBuffer();
-      const wb  = XLSX.read(new Uint8Array(buf), { type: "array" });
+      if (!file) {
+        setStatus("⚠️ Δεν επιλέχθηκε αρχείο.");
+        return;
+      }
+
+      let wb;
+      if (file.name.toLowerCase().endsWith(".csv")) {
+        // CSV
+        const csvText = await file.text();
+        wb = XLSX.read(csvText, { type: "string" });
+      } else {
+        // XLSX / XLS
+        const buf = await file.arrayBuffer();
+        wb = XLSX.read(new Uint8Array(buf), { type: "array" });
+      }
+
       const sheetName = wb.SheetNames.includes("Alternatives")
         ? "Alternatives"
         : wb.SheetNames[0];
-      const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
-      setRows(json);
-      setStatus(`✅ Φορτώθηκαν ${json.length} γραμμές από το ${file.name}.`);
+
+      const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
+        defval: "",
+      });
+
+      if (json.length) {
+        setRows(json);
+        setStatus(`✅ Φορτώθηκαν ${json.length} γραμμές από «${file.name}».`);
+      } else {
+        setRows([]);
+        setStatus("⚠️ Το αρχείο δεν είχε γραμμές.");
+      }
     } catch (e) {
       console.error(e);
       setStatus("❌ Αποτυχία ανάγνωσης αρχείου.");
     }
   }
 
-  /* -------- Search -------- */
-  function onSearch() {
-    const q   = norm(query).toLowerCase();
-    const cat = norm(category);
-    const filtered = rows.filter((r) => {
-      const okCat  = cat === "Όλες" || norm(r["Κατηγορία"]) === cat;
-      const okName = !q || norm(r["Όνομα"]).toLowerCase().includes(q);
-      return okCat && okName;
-    });
-    if (filtered.length > 0) setSelected(filtered[0]);
-    else setSelected(null);
+  /* ------------------------- search ------------------------- */
+  function findBestByName(name, threshold = 0.45) {
+    const target = norm(name);
+    let best = { score: 0, hit: null };
+    for (const it of nameIndex) {
+      const sc = similarity(it.key, target) + (it.key.startsWith(target) ? 0.05 : 0);
+      if (sc > best.score) best = { score: sc, hit: it.row };
+    }
+    return best.score >= threshold ? best.hit : null;
   }
 
-  /* -------- UI -------- */
+  function onSearch() {
+    // Φιλτράρισμα κατηγορίας
+    const base = rows.filter((r) =>
+      category === "Όλες" ? true : norm(get(r, "Κατηγορία")) === norm(category)
+    );
+
+    // Αναζήτηση ονόματος
+    let hit = null;
+    if (query && query.trim().length > 0) {
+      hit = findBestByName(query);
+      if (!hit) {
+        // δοκίμασε μέσα στο subset της κατηγορίας
+        const idx = base.map((r) => ({
+          key: norm(get(r, "Όνομα")),
+          row: r,
+        }));
+        const t = norm(query);
+        let best = { score: 0, row: null };
+        for (const it of idx) {
+          const sc = similarity(it.key, t) + (it.key.startsWith(t) ? 0.05 : 0);
+          if (sc > best.score) best = { score: sc, row: it.row };
+        }
+        if (best.score >= 0.45) hit = best.row;
+      }
+    } else {
+      // χωρίς όνομα → πάρε το πρώτο της κατηγορίας (αν υπάρχει)
+      hit = base[0] || null;
+    }
+
+    setSelected(hit || null);
+    if (!hit) setStatus("⚠️ Δεν βρέθηκε αποτέλεσμα. Δοκίμασε άλλο όνομα.");
+  }
+
+  /* ------------------------- UI ------------------------- */
+  const ResultCard = () => {
+    if (!selected) return null;
+
+    const name = get(selected, "Όνομα");
+    const cat = get(selected, "Κατηγορία");
+    const price = get(selected, "Τιμή");
+
+    const characteristics = [
+      ["Ποικιλία", get(selected, "Ποικιλία")],
+      ["Περιοχή", get(selected, "Περιοχή")],
+      ["Αλκοόλ", get(selected, "Αλκοόλ")],
+      ["Ξηρότητα", get(selected, "Ξηρότητα")],
+      ["Οξύτητα", get(selected, "Οξύτητα")],
+      ["Ορυκτότητα", get(selected, "Ορυκτότητα")],
+      ["Σώμα", get(selected, "Σώμα")],
+      ["Σχόλια", get(selected, "Σχόλια")],
+    ].filter(([, v]) => String(v || "").trim().length > 0);
+
+    const alts = [get(selected, "Αντιπρόταση 1"), get(selected, "Αντιπρόταση 2"), get(selected, "Αντιπρόταση 3")]
+      .map((x) => String(x || "").trim())
+      .filter(Boolean);
+
+    return (
+      <div className="card">
+        <div className="card-header">
+          <div>
+            <b>{name || "—"}</b>
+            {" | "}
+            <span>{cat || "—"}</span>
+          </div>
+          <div className="price">{price ? `€${price}` : ""}</div>
+        </div>
+
+        <div className="grid">
+          <div className="panel">
+            <div className="panel-title">Χαρακτηριστικά</div>
+            {characteristics.length === 0 ? (
+              <div className="muted">—</div>
+            ) : (
+              <ul className="details">
+                {characteristics.map(([k, v]) => (
+                  <li key={k}>
+                    <span className="key">{k}:</span> <span className="val">{String(v)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="panel alt">
+            <div className="panel-title">Κύρια Αντιπρόταση</div>
+            {alts.length === 0 ? (
+              <div className="muted">—</div>
+            ) : (
+              <div className="alts">
+                {alts.map((a, i) => (
+                  <div key={i} className="alt-chip">
+                    {a}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="container">
       <header className="header">
         <h1 className="title">Wine Finder Pool Bar</h1>
         <p className="subtitle">Αναζήτηση κρασιών, χαρακτηριστικά & αντιπροτάσεις — wine-themed.</p>
-        <div className="tabs">
-          <button className={`btn ${tab === "finder" ? "primary" : ""}`} onClick={() => setTab("finder")}>Φόρμα Αναζήτησης</button>
-          <button className={`btn ${tab === "about"  ? "primary" : ""}`} onClick={() => setTab("about")}>About / Οδηγίες</button>
-        </div>
       </header>
 
-      {tab === "finder" && (
-        <>
-          <div className="card">
-            <div className="row">
-              {SHOW_UPLOAD && (
-                <div className="col">
-                  <label>Αρχείο Excel</label>
-                  <input className="input" type="file" accept=".xlsx,.xls,.csv"
-                         onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])}/>
-                </div>
-              )}
+      <div className="card">
+        {SHOW_UPLOAD && (
+          <div className="field">
+            <label>Αρχείο Excel/CSV</label>
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={(e) => handleFile(e.target.files[0])}
+            />
+            <div className="hint">Φόρτωσε το Excel με τις αντιπροτάσεις.</div>
+          </div>
+        )}
 
-              <div className="col">
-                <label>Κατηγορία</label>
-                <select className="input" value={category} onChange={(e)=>setCategory(e.target.value)}>
-                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-
-              <div className="col">
-                <label>Όνομα Κρασιού</label>
-                <div style={{display:'flex',gap:8}}>
-                  <input className="input" list="wines" placeholder="π.χ. Vassaltis Santorini…"
-                         value={query} onChange={e=>setQuery(e.target.value)} />
-                  <datalist id="wines">{names.map(n => <option key={n} value={n} />)}</datalist>
-                  <button className="btn primary" onClick={onSearch}>Αναζήτηση</button>
-                </div>
-              </div>
-            </div>
-            <div className="muted" style={{marginTop:8}}>{status}</div>
+        <div className="form-grid">
+          <div className="field">
+            <label>Κατηγορία</label>
+            <select value={category} onChange={(e) => setCategory(e.target.value)}>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <Result rows={rows} selected={selected} derive={derive} norm={norm} findRowByNameLoose={findRowByNameLoose}/>
-        </>
-      )}
+          <div className="field">
+            <label>Όνομα Κρασιού</label>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="π.χ. Vassaltis Santorini…"
+            />
+          </div>
 
-      {tab === "about" && (
-        <div className="card">
-          <h3 style={{marginTop:0}}>About / Οδηγίες</h3>
-          <ul className="list">
-            <li>Το Excel φορτώνεται αυτόματα από το <code>/public</code> (π.χ. <code>/Wine_List_from_PDF.xlsx</code>), sheet <b>Alternatives</b>.</li>
-            <li>Στήλες: <b>Κατηγορία</b>, <b>Όνομα</b>, <b>Τιμή</b>, <b>Αντιπρόταση 1–3</b>, <b>Ποικιλία</b>, <b>Περιοχή</b>, <b>Αλκοόλ</b>, <b>Ξηρότητα</b>, <b>Ορυκτότητα</b>, <b>Οξύτητα</b>, <b>Σώμα</b>, <b>Σχόλια</b>.</li>
-            <li>Για χαρακτηριστικά στις αντιπροτάσεις, πρέπει οι αντιπροτάσεις να υπάρχουν ως ξεχωριστές γραμμές με ίδιο <b>Όνομα</b>.</li>
-          </ul>
+          <div className="field actions">
+            <button className="btn primary" onClick={onSearch}>
+              Αναζήτηση
+            </button>
+          </div>
         </div>
-      )}
+
+        <div className="status">{status}</div>
+      </div>
+
+      <ResultCard />
 
       <footer className="footer">• Wine Finder Pool Bar</footer>
-    </div>
-  );
-}
-
-/* ---------- Components ---------- */
-function Result({ rows, selected, derive, norm, findRowByNameLoose }) {
-  if (!selected) return null;
-
-  const ch = derive(selected);
-  const altNames = ch.alts;
-  // Fuzzy αντιστοίχιση για κάθε αντιπρόταση
-  const altRows = altNames.map((name) => findRowByNameLoose(name));
-
-  return (
-    <div className="card" style={{marginTop:16}}>
-      <div className="title-line">
-        <h3 style={{margin:'8px 0 0 0'}}>{ch.name}</h3>
-        <div className="muted">{ch.price}</div>
-      </div>
-
-      <div className="row" style={{marginTop:12}}>
-        {/* Βασικό κρασί */}
-        <div className="card">
-          <div className="muted" style={{fontWeight:600,color:'#9f1239'}}>Χαρακτηριστικά</div>
-          <KV k="Ποικιλία" v={ch.variety} />
-          <KV k="Περιοχή"  v={ch.region} />
-          <KV k="Αλκοόλ"   v={ch.abv} />
-          <KV k="Ξηρότητα" v={ch.dryness} />
-          <KV k="Ορυκτότητα" v={ch.minerality} />
-          <KV k="Οξύτητα"  v={ch.acidity} />
-          <KV k="Σώμα"     v={ch.body} />
-          {ch.notes && <div className="muted" style={{marginTop:8}}><b>Σχόλια:</b> {ch.notes}</div>}
-        </div>
-
-        {/* Κύρια αντιπρόταση (1η) */}
-        <div className="card" style={{background:'#fff7f8'}}>
-          <div className="muted" style={{fontWeight:600,color:'#9f1239'}}>Κύρια Αντιπρόταση</div>
-          {altNames[0] ? (
-            <>
-              <div style={{fontWeight:600}}>{altNames[0]}</div>
-              {altRows[0] && <div className="muted" style={{marginTop:4}}>{norm(altRows[0]["Τιμή"])}</div>}
-            </>
-          ) : (<div className="muted">—</div>)}
-          {altNames.slice(1).length>0 && (
-            <div style={{marginTop:8}}>
-              {altNames.slice(1).map((a,i)=>(<span key={i} className="badge">{a}</span>))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Αναλυτικά οι αντιπροτάσεις */}
-      {altNames.length>0 && (
-        <>
-          <div className="hr"></div>
-          <div className="muted" style={{fontWeight:600,marginBottom:8}}>Αναλυτικά Αντιπροτάσεις</div>
-          <div className="row">
-            {altNames.map((name, idx) => {
-              const r = altRows[idx];
-              if (!r) {
-                return (
-                  <div key={idx} className="card">
-                    <div style={{fontWeight:600}}>{name}</div>
-                    <div className="muted" style={{marginTop:6}}>Δεν βρέθηκαν λεπτομέρειες στο Excel.</div>
-                  </div>
-                );
-              }
-              const d = derive(r);
-              return (
-                <div key={idx} className="card">
-                  <div className="title-line">
-                    <div style={{fontWeight:600}}>{name}</div>
-                    <div className="muted">{d.price}</div>
-                  </div>
-                  <KV k="Ποικιλία"    v={d.variety} />
-                  <KV k="Περιοχή"     v={d.region} />
-                  <KV k="Ξηρότητα"    v={d.dryness} />
-                  <KV k="Ορυκτότητα"  v={d.minerality} />
-                  <KV k="Οξύτητα"     v={d.acidity} />
-                  <KV k="Σώμα"        v={d.body} />
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function KV({ k, v }) {
-  if (!v) return null;
-  return (
-    <div className="kv">
-      <span className="muted">{k}</span>
-      <b>{v}</b>
     </div>
   );
 }
