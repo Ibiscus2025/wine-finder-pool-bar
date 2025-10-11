@@ -99,7 +99,7 @@ export default function App() {
   async function loadPreloaded() {
   // 1) Προσπάθησε να διαβάσεις XLSX
   try {
-    const urlX = "/Wines_2025.xlsx";
+    const urlX = "/Wines_2025.csv";
     const resX = await fetch(urlX, { cache: "no-store" });
     if (resX.ok) {
       const buf = await resX.arrayBuffer();
